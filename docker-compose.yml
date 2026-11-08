@@ -1,0 +1,9 @@
+services:
+  localstack:
+    image: localstack/localstack:4.4
+    ports:
+      - "4566:4566"
+    environment:
+      SERVICES: dynamodb,s3
+      AWS_DEFAULT_REGION: sa-east-1
+      LOCALSTACK_AUTH_TOKEN: ${LOCALSTACK_AUTH_TOKEN:-}

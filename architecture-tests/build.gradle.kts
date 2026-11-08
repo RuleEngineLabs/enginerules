@@ -1,0 +1,17 @@
+dependencies {
+    testImplementation(project(":engine-domain"))
+    testImplementation(project(":engine-application"))
+    testImplementation(project(":adapter-expression-builtin"))
+    testImplementation(project(":adapter-json-codec"))
+    testImplementation(project(":adapter-persistence-documents"))
+    testImplementation(project(":adapter-persistence-filesystem"))
+    testImplementation(project(":adapter-persistence-aws"))
+    testImplementation(project(":adapter-http-connector"))
+    testImplementation(project(":adapter-grpc-connector"))
+    testImplementation(project(":adapter-cache-memory"))
+    testImplementation(project(":adapter-web"))
+    testImplementation(project(":app-engine"))
+    testImplementation(project(":app-admin"))
+    testImplementation("org.springframework:spring-webmvc")
+    testImplementation("com.tngtech.archunit:archunit-junit5:1.4.1")
+}

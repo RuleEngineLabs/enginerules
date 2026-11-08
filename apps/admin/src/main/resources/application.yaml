@@ -1,0 +1,25 @@
+server:
+  port: ${ADMIN_PORT:8081}
+
+spring:
+  application:
+    name: enginerules-admin
+
+enginerules:
+  store-directory: ${ENGINERULES_STORE_DIRECTORY:./.data}
+  store:
+    type: ${ENGINERULES_STORE_TYPE:filesystem}
+  aws:
+    region: ${AWS_REGION:sa-east-1}
+    endpoint: ${ENGINERULES_AWS_ENDPOINT:}
+    table-prefix: ${ENGINERULES_AWS_TABLE_PREFIX:enginerules-}
+    snapshot-bucket: ${ENGINERULES_AWS_SNAPSHOT_BUCKET:enginerules-stable-snapshots}
+    create-resources: ${ENGINERULES_AWS_CREATE_RESOURCES:false}
+  canary:
+    evaluation-interval: 30s
+    criteria:
+      error-margin-percentage-points: 0.5
+      max-latency-ratio: 1.2
+      min-samples: 1000
+      max-input-incompatibility-rate: 0.0
+  grpc-connections: {}

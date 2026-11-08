@@ -1,0 +1,43 @@
+server:
+  port: ${ENGINE_PORT:8080}
+
+spring:
+  application:
+    name: enginerules-engine
+  threads:
+    virtual:
+      enabled: true
+
+enginerules:
+  store-directory: ${ENGINERULES_STORE_DIRECTORY:./.data}
+  store:
+    type: ${ENGINERULES_STORE_TYPE:filesystem}
+  aws:
+    region: ${AWS_REGION:sa-east-1}
+    endpoint: ${ENGINERULES_AWS_ENDPOINT:}
+    table-prefix: ${ENGINERULES_AWS_TABLE_PREFIX:enginerules-}
+    snapshot-bucket: ${ENGINERULES_AWS_SNAPSHOT_BUCKET:enginerules-stable-snapshots}
+  catalog-refresh-interval: 30s
+  rollout-refresh-interval: 5s
+  compiled-cache-max-entries: 5000
+  result-cache-retention: 30m
+  connect-timeout: 2s
+  execution:
+    timeout: 10s
+    step-budget: 1000
+  trace:
+    enabled: false
+    policies: []
+  shadow:
+    concurrency: 4
+    queue-capacity: 1000
+    ignored-paths: []
+  metrics:
+    flush-interval: 1s
+    max-buffered-samples: 100000
+  connections:
+    brasilapi:
+      base-url: ${CONNECTION_BRASILAPI_BASE_URL:https://brasilapi.com.br}
+    httpbin:
+      base-url: ${CONNECTION_HTTPBIN_BASE_URL:https://httpbin.org}
+  grpc-connections: {}
