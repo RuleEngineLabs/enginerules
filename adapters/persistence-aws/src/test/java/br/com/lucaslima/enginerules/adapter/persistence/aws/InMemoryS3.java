@@ -45,6 +45,15 @@ final class InMemoryS3 implements S3Client {
     }
 
     @Override
+    public String serviceName() {
+        return SERVICE_NAME;
+    }
+
+    @Override
+    public void close() {
+    }
+
+    @Override
     public PutObjectResponse putObject(PutObjectRequest request, RequestBody body) {
         available();
         try (InputStream content = body.contentStreamProvider().newStream()) {

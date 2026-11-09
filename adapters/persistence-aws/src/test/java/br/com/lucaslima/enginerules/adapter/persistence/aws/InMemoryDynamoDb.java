@@ -75,6 +75,15 @@ class InMemoryDynamoDb implements DynamoDbClient {
     }
 
     @Override
+    public String serviceName() {
+        return SERVICE_NAME;
+    }
+
+    @Override
+    public void close() {
+    }
+
+    @Override
     public GetItemResponse getItem(GetItemRequest request) {
         available();
         Map<String, AttributeValue> item = table(request.tableName()).get(key(request.key()));
