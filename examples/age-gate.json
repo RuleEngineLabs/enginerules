@@ -1,0 +1,48 @@
+{
+  "name": "AgeGate",
+  "ownerGroup": "credit-team",
+  "allowedConsumers": [],
+  "definition": {
+    "entry": "evaluate",
+    "states": [
+      {
+        "id": "evaluate",
+        "kind": "execution",
+        "map": { "adult": "input.age >= 18", "name": "upper(input.name)" },
+        "contextKey": "decision",
+        "transitions": [ { "when": "decision.adult", "to": "lookupCep" } ],
+        "fallback": "denied"
+      },
+      {
+        "id": "lookupCep",
+        "kind": "apiCall",
+        "connection": "brasilapi",
+        "method": "GET",
+        "path": "/api/cep/v1/{cep}",
+        "pathParams": { "cep": "input.cep" },
+        "timeoutMs": 2000,
+        "retry": { "maxAttempts": 3, "backoffMs": [50, 100] },
+        "ttlSeconds": 300,
+        "contextKey": "address",
+        "transitions": [
+          { "when": "result.timeout == true", "to": "providerTimeout" },
+          { "when": "result.error != null", "to": "providerUnavailable" },
+          { "when": "result.status == 400", "to": "invalidRequest" },
+          { "when": "result.status >= 500", "to": "providerUnavailable" },
+          { "when": "result.status >= 300", "to": "invalidRequest" }
+        ],
+        "fallback": "approved"
+      },
+      {
+        "id": "approved",
+        "kind": "response",
+        "status": 200,
+        "data": { "approved": "true", "name": "decision.name", "city": "address.body.city" }
+      },
+      { "id": "denied", "kind": "response", "status": 403, "data": { "approved": "false" } },
+      { "id": "invalidRequest", "kind": "response", "status": 422, "data": { "reason": "'invalid cep'" } },
+      { "id": "providerTimeout", "kind": "response", "status": 504, "data": { "reason": "'cep provider timeout'" } },
+      { "id": "providerUnavailable", "kind": "response", "status": 503, "data": { "reason": "'cep provider unavailable'" } }
+    ]
+  }
+}

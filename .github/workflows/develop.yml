@@ -1,0 +1,92 @@
+name: Develop — Validate
+
+on:
+  push:
+    branches:
+      - develop
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Java validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Build, unit tests, ArchUnit + coverage gate (≥98%)
+        run: |
+          chmod +x gradlew
+          ./gradlew build --no-daemon --stacktrace
+
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ github.run_id }}
+          path: |
+            **/build/reports/jacoco/test/
+            **/build/reports/tests/test/
+          if-no-files-found: ignore
+
+  integration:
+    name: Integration tests (LocalStack)
+    needs: validate
+    runs-on: ubuntu-latest
+    services:
+      localstack:
+        image: localstack/localstack:4.4
+        ports:
+          - 4566:4566
+        env:
+          SERVICES: dynamodb,s3
+          AWS_DEFAULT_REGION: sa-east-1
+          LOCALSTACK_AUTH_TOKEN: ${{ secrets.LOCALSTACK_AUTH_TOKEN }}
+    env:
+      ENGINERULES_IT_AWS_ENDPOINT: http://localhost:4566
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_REGION: sa-east-1
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Wait for LocalStack (DynamoDB + S3)
+        run: |
+          for attempt in $(seq 1 60); do
+            HEALTH=$(curl -sf http://localhost:4566/_localstack/health || true)
+            if echo "$HEALTH" | jq -e '(.services.dynamodb == "available" or .services.dynamodb == "running") and (.services.s3 == "available" or .services.s3 == "running")' > /dev/null 2>&1; then
+              echo "LocalStack pronto: $HEALTH"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "LocalStack não ficou pronto a tempo"
+          exit 1
+
+      - name: Integration tests against LocalStack
+        run: |
+          chmod +x gradlew
+          ./gradlew :integration-tests:integrationTest --no-daemon --stacktrace
+
+      - name: Upload integration reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-${{ github.run_id }}
+          path: integration-tests/build/reports/tests/integrationTest/
+          if-no-files-found: ignore

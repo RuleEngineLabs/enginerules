@@ -1,0 +1,99 @@
+name: Feature — Validate & Open PR
+
+on:
+  push:
+    branches:
+      - 'feature/**'
+      - 'fix/**'
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  commitlint:
+    name: Lint commit messages
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: wagoid/commitlint-github-action@v6
+        with:
+          configFile: .commitlintrc.mjs
+
+  validate:
+    name: Java validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Build, unit tests, ArchUnit + coverage gate (≥98%)
+        run: |
+          chmod +x gradlew
+          ./gradlew build --no-daemon --stacktrace
+
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ github.run_id }}
+          path: |
+            **/build/reports/jacoco/test/
+            **/build/reports/tests/test/
+          if-no-files-found: ignore
+
+  open-pr:
+    name: Open PR → develop (se não existe)
+    needs: [commitlint, validate]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate agent token
+        id: agent_token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.AGENT_CLIENT_ID }}
+          private-key: ${{ secrets.AGENT_APP_PRIVATE_KEY }}
+
+      - name: Create PR to develop (idempotente)
+        env:
+          GH_TOKEN: ${{ steps.agent_token.outputs.token }}
+        run: |
+          BRANCH="${{ github.ref_name }}"
+          # Extrai número da issue do nome da branch (ex: feature/4-us-001-... → 4)
+          ISSUE_NUM=$(echo "$BRANCH" | sed -n 's|^feature/\([0-9]*\)[_-].*|\1|p')
+
+          EXISTING=$(gh pr list --head "$BRANCH" --base develop --state open --json number,body --jq '.[0] // empty')
+          if [ -n "$EXISTING" ]; then
+            PR_NUM=$(echo "$EXISTING" | jq -r '.number')
+            PR_BODY=$(echo "$EXISTING" | jq -r '.body')
+            if [ -n "$ISSUE_NUM" ] && ! echo "$PR_BODY" | grep -qF "Closes #${ISSUE_NUM}"; then
+              UPDATED=$(printf "%s\n\nCloses #%s" "$PR_BODY" "$ISSUE_NUM")
+              gh pr edit "$PR_NUM" --body "$UPDATED"
+              echo "PR #$PR_NUM vinculado à issue #$ISSUE_NUM"
+            else
+              echo "PR #$PR_NUM já existe e está atualizado."
+            fi
+          else
+            TITLE="feat: ${BRANCH#feature/}"
+            if [ -n "$ISSUE_NUM" ]; then
+              BODY=$(printf "## Automated PR\n\nBranch: \`%s\`\n\n**CI passed:** commitlint ✅ | gradle build ✅ | tests ✅ | coverage ✅\n\nCloses #%s" "$BRANCH" "$ISSUE_NUM")
+            else
+              BODY=$(printf "## Automated PR\n\nBranch: \`%s\`\n\n**CI passed:** commitlint ✅ | gradle build ✅ | tests ✅ | coverage ✅" "$BRANCH")
+            fi
+            gh pr create \
+              --base develop \
+              --head "$BRANCH" \
+              --title "$TITLE" \
+              --body "$BODY"
+          fi
