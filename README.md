@@ -61,7 +61,7 @@ A seta é sempre para dentro: o domínio não conhece nada além do JDK; a aplic
 
 ## Como rodar
 
-Pré-requisito: JDK 25 (o toolchain do Gradle baixa se necessário).
+Pré-requisito: JDK 25 instalado (o Gradle usa o `JAVA_HOME` ou uma instalação local detectada; não há download automático de JDK).
 
 ```bash
 ./gradlew build
@@ -153,14 +153,103 @@ enginerules:
 
 ## Testes
 
+### Pré-requisitos
+
+| Para rodar | Precisa de |
+|---|---|
+| Build, unitários, ArchUnit e cobertura | JDK 25 |
+| Integrados com store em arquivo | JDK 25 (sobem admin, engine, um provider REST e um servidor gRPC falsos, tudo em portas aleatórias) |
+| Integrados em DynamoDB + S3 | JDK 25 + Docker (LocalStack na porta 4566) |
+
+No Windows, troque `./gradlew` por `gradlew.bat` (PowerShell/CMD) ou use o Git Bash com os comandos como estão.
+
+### 1. Build e testes unitários (o que a `feature/**` roda no CI)
+
 ```bash
-./gradlew build                                   # compila com -Werror, unitários, ArchUnit e gate JaCoCo (linha ≥ 98%)
-./gradlew :integration-tests:integrationTest      # integrados com store em arquivo
-docker compose up -d localstack
-ENGINERULES_IT_AWS_ENDPOINT=http://localhost:4566 ./gradlew :integration-tests:integrationTest   # integrados em DynamoDB + S3
+./gradlew build
 ```
 
-Os integrados rodam por HTTP contra os dois processos reais. Cada feature tem ao menos 5 cenários: `PoliciesIT`, `VersionPublishingIT`, `StableVersionIT`, `VersionRemovalIT`, `PolicyQueriesIT`, `AuditsIT`, `ExecutionsIT`, `PreviewsIT`, `CanariesIT`, `ShadowsIT`, `GrpcIT` e, só contra o LocalStack, `AwsStorageIT` (layout das tabelas, índice esparso, snapshot em S3). Detalhes em `docs/adr/0007-estrategia-de-testes.md`.
+Compila tudo com `-Xlint:all -Werror` (qualquer aviso quebra o build), roda os unitários e o ArchUnit e aplica o gate JaCoCo de **linha ≥ 98% por módulo** (domínio, aplicação e todos os adaptadores). Os integrados não rodam aqui.
+
+Relatórios, por módulo:
+
+| O quê | Onde |
+|---|---|
+| Testes | `<módulo>/build/reports/tests/test/index.html` |
+| Cobertura | `<módulo>/build/reports/jacoco/test/html/index.html` |
+
+Atalhos úteis:
+
+```bash
+./gradlew :engine-domain:test                                        # um módulo
+./gradlew :engine-domain:test --tests '*PolicyCompilerTest'          # uma classe
+./gradlew :adapter-persistence-aws:jacocoTestCoverageVerification   # testes + gate de um módulo
+./gradlew :architecture-tests:test                                   # só as regras de arquitetura
+```
+
+### 2. Integrados com store em arquivo
+
+```bash
+./gradlew :integration-tests:integrationTest
+```
+
+Sobe `AdminApplication` e `EngineApplication` reais no mesmo JVM, com um diretório temporário compartilhado, e exercita cada feature por HTTP. `AwsStorageIT` aparece como *skipped* nesse modo. Relatório em `integration-tests/build/reports/tests/integrationTest/index.html`.
+
+Uma feature só: `./gradlew :integration-tests:integrationTest --tests '*CanariesIT'`.
+
+### 3. Integrados em DynamoDB + S3 com LocalStack (o que `develop` e `release/**` rodam no CI)
+
+```bash
+docker compose up -d localstack
+curl -s http://localhost:4566/_localstack/health      # dynamodb e s3 devem estar "available" ou "running"
+
+ENGINERULES_IT_AWS_ENDPOINT=http://localhost:4566 \
+AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test AWS_REGION=sa-east-1 \
+./gradlew :integration-tests:integrationTest
+
+docker compose down
+```
+
+PowerShell:
+
+```powershell
+docker compose up -d localstack
+$env:ENGINERULES_IT_AWS_ENDPOINT = "http://localhost:4566"
+$env:AWS_ACCESS_KEY_ID = "test"; $env:AWS_SECRET_ACCESS_KEY = "test"; $env:AWS_REGION = "sa-east-1"
+.\gradlew.bat :integration-tests:integrationTest
+```
+
+Com `ENGINERULES_IT_AWS_ENDPOINT` definido, **todo** o conjunto roda com o store em DynamoDB + S3. O admin cria tabelas e bucket com prefixo e nome únicos por execução (`it-<id>-…`, `enginerules-it-<id>`), então execuções seguidas não se misturam e não é preciso limpar o LocalStack entre elas. `AwsStorageIT` só roda nesse modo e confere os itens no DynamoDB, o índice esparso e o snapshot no S3.
+
+### O que cada feature cobre
+
+| Feature | Classe | Cenários |
+|---|---|---|
+| Criação de política | `PoliciesIT` | 8 |
+| Publicação de versão | `VersionPublishingIT` | 8 |
+| STABLE (promoção e rollback) | `StableVersionIT` | 5 |
+| Remoção de versão | `VersionRemovalIT` | 6 |
+| Consultas do catálogo | `PolicyQueriesIT` | 5 |
+| Auditoria | `AuditsIT` | 6 |
+| Execução (REST, retry, timeout, cache, escrita) | `ExecutionsIT` | 10 |
+| Preview | `PreviewsIT` | 6 |
+| Canary | `CanariesIT` | 7 |
+| Sombra | `ShadowsIT` | 7 |
+| gRPC | `GrpcIT` | 7 |
+| Store AWS (só LocalStack) | `AwsStorageIT` | 6 |
+
+Estratégia e decisões em `docs/adr/0007-estrategia-de-testes.md`.
+
+### Problemas comuns
+
+| Sintoma | Causa provável |
+|---|---|
+| `error: warnings found and -Werror specified` | um aviso novo do compilador; corrija o código em vez de remover o `-Werror` |
+| `Rule violated for bundle <módulo>: lines covered ratio is 0.97…` | o módulo caiu abaixo de 98%; o relatório JaCoCo do módulo mostra as linhas sem teste |
+| `Cannot find a Java installation … languageVersion=25` | falta o JDK 25 ou o `JAVA_HOME` aponta para outra versão |
+| Integrados em AWS falham com `Connection refused` | LocalStack não subiu ou a porta 4566 está ocupada (`docker compose ps`) |
+| LocalStack não inicia pedindo token | defina `LOCALSTACK_AUTH_TOKEN` (o compose e o CI já repassam a variável) |
+| `./gradlew: Permission denied` | `git update-index --chmod=+x gradlew` e commit |
 
 ## CI/CD
 
